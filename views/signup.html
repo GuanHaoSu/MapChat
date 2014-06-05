@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+  	<meta charset="utf-8">
+    <title></title>
+    <!-- Bootstrap -->
+    <link href="stylesheets/bootstrap.min.css" rel="stylesheet" media="screen">
+	<!-- <link href="css/bootstrap-responsive.min.css" rel="stylesheet" media="screen"> -->
+  </head>
+  <body screen_capture_injected="true">
+  <div class="container-fluid">
+	<form class="form-horizontal" method="post" id="form1" action="/signup">
+	  <fieldset>
+	    <legend>帳號申請</legend>
+	    <div class="control-group">
+	      <label class="control-label" for="username">帳號</label>
+	      <div class="controls">
+	        <input type="text" class="input-xlarge" id="username" name="username" value="">
+	      </div>
+	    </div>
+	    <div class="control-group">
+	      <label class="control-label" for="password">密碼</label>
+	      <div class="controls">
+	        <input type="password" class="input-xlarge" id="password" name="password" value="">
+	      </div>
+	    </div>
+	     <div class="control-group">
+	      <label class="control-label" for="role">權限</label>
+	      <div class="controls">
+	        <input type="text" class="input-xlarge" id="role" name="role" value="">
+	      </div>
+	    </div>
+	    <div class="form-actions">
+	      <button type="submit" class="btn btn-primary">申請</button>
+	    </div>
+	  </fieldset>
+	</form>
+</div>
+
+<script src="javascripts/jquery-1.9.1.min.js"></script>
+<script src="javascripts/bootstrap.min.js"></script>
+</script>
+</body>
+</html>

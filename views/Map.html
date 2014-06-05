@@ -1,0 +1,463 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <title>Simple Chat</title>
+    <link rel="stylesheet",type="text/css" href="stylesheets/styles.css"/>
+    <script type="text/javascript" src="/socket.io/socket.io.js"></script>
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.2/jquery.min.js"></script>
+  <!--  <script type="text/javascript" src="chat.js"></script>-->
+        <script src="https://maps.googleapis.com/maps/api/js?v=3.exp&sensor=false"></script>
+    <style>
+      html, body, #map-canvas {
+        height: 500px;
+        margin: 0px;
+        padding: 0px
+      }
+       #directions-panel {
+        height: 100%;
+        float: right;
+        width: 390px;
+        overflow: auto;
+      }
+    </style>
+  </head>
+  <body>
+
+    <div id="wrapper">
+    hello ! <%=username %> <%-uname%>角色權限: <%-role%>
+      <a href="/logout">登出</a>
+      <h1>Travel Chat</h1>
+      <div id="directions-panel"></div>
+       <div id="map-canvas"></div>
+       起點：<input type="text" id="start" value="臺北市" />
+       終點：<input type="text" id="end"　value="高雄市"　/>
+
+       <select id="mode">
+  <option value="drive">開車</option>
+  <option value="transit">大眾運輸</option>
+  <option value="walk">步行</option>
+  <option value="bike">腳踏車</option>
+</select>
+       <input type="button" value="規畫路線"　id="planRoute" onclick="plan()" />
+       <input type="button" value="儲存路線"　id="save" onclick="AddPlans()">
+       <button onclick="getLocation()">顯示所在位置</button>
+         <button onclick="clearTimeout(geo);">停止顯示所在位置</button>
+        <button onclick="TrackStart()">顯示軌跡</button>
+                <button onclick="clearInterval(myVar);ClearMark();">停止顯示軌跡</button>
+       <div id="lists"></div>
+      <div id="messages"></div>
+      <div class="nic">
+        <input id="name" name="name" type="hidden"/>
+      </div>
+      <textarea id="message"></textarea>
+      <input id="send" type="submit" value="Send"/>
+    </div>
+    <script type="text/javascript">
+    var usernameown = $("#username").val();
+    var latown,lonown;
+    var map;
+    var latlngclick;
+    var zoomin;
+    var directionsDisplay;
+    var directionsService = new google.maps.DirectionsService();
+    var unameown;
+    (function () {
+  window.Chat = {
+    socket : null,
+  
+    initialize : function(socketURL) {
+      this.socket = io.connect(socketURL);
+        Chat.firstlogin();
+      //Send message on button click or enter
+      $('#send').click(function() {
+        Chat.send();
+      });
+
+      $('#message').keyup(function(evt) {
+        if ((evt.keyCode || evt.which) == 13) {
+          Chat.send();
+          return false;
+        }
+      });
+
+      //Process any incoming messages
+      this.socket.on('new', this.add);
+       this.socket.on('Latlngnew', this.Latlngadd);
+       this.socket.on('zooming', this.ZoomChange);
+        this.socket.on('routeAdd', this.routeAdd);
+         this.socket.on('updateRouteIng', this.updateRouteIng);
+         this.socket.on('showLoginName', this.showLoginName);    
+          this.socket.on('selfPositionBroadcast', this.selfPositionBroadcast);
+    }, 
+    firstlogin : function() {
+      this.socket.emit('firstlogin', {
+        name: usernameown
+      });
+      return false;
+    },
+
+    //Adds a new message to the chat.
+    add : function(data) {
+      var name = data.name || 'anonymous';
+      var msg = $('<div class="msg"></div>')
+        .append('<span class="name">' + name + '</span>: ')
+        .append('<span class="text">' + data.msg + '</span>');
+
+      $('#messages')
+        .append(msg)
+        .animate({scrollTop: $('#messages').prop('scrollHeight')}, 0);
+    },
+    showLoginName:function(data) {
+      var name = data.name;
+      var msg = $('<div class="msg"></div>')
+        .append('<span class="name">' + name + '加入聊天室</span> ');
+
+      $('#messages')
+        .append(msg)
+        .animate({scrollTop: $('#messages').prop('scrollHeight')}, 0);
+    },
+    Latlngadd : function(data) {
+
+     placeMarker(data.latvalue,data.lngvalue,map);
+    },
+    //Sends a message to the server,
+    //then clears it from the textarea
+    send : function() {
+      this.socket.emit('msg', {
+        name: usernameown,
+        msg: $('#message').val()
+      });
+
+      $('#message').val('');
+
+      return false;
+    },
+    LatLngSend : function(lat,lng) {
+      this.socket.emit('latlng', {
+        latvalue: lat,
+        lngvalue: lng
+      });
+
+      return false;
+    },
+    ZoomAdd : function(zoomlevel) {
+      this.socket.emit('zoom', {
+        zoomlevelvalue: zoomlevel,
+      });
+
+      return false;
+    },
+    ZoomChange : function(data) {
+      var zoomvalue=data.zoomlevelvalue;
+       map.setOptions({Zoom:zoomvalue});
+    },
+    planroute : function(start,end,mode) {
+      this.socket.emit('plan', {
+        startvalue: start,
+        endvalue:end,
+        modevalue:mode
+      });
+
+      return false;
+    },
+    routeAdd : function(data) {
+      var start=data.startvalue;
+      var end=data.endvalue;
+      var mode = data.modevalue;
+      calcRoute(start,end,mode);
+    },
+    updateRoute : function() {
+      this.socket.emit('updateRoute', {
+        updadte: "1"
+      });
+
+      return false;
+    },
+    updateRouteIng : function(data) {
+      GetRoute();
+    },
+    selfPosition : function() {
+      this.socket.emit('selfPosition', {
+        latowns: latown,
+        lonowns: lonown,
+        unameowns:unameown
+      });
+      return false;
+    },
+    selfPositionBroadcast : function(data) {
+      var lat = data.latowns;
+      var lon=data.lonowns;
+      var unameown=data.unameowns;
+      selfPositionMark(lat,lon,unameown);
+    }
+
+  };
+}());
+
+      $(document).ready(function() {
+        Chat.initialize('http://172.16.3.246/');
+        GetRoute();
+        GetScene();
+      });
+
+      function initialize() {
+         directionsDisplay = new google.maps.DirectionsRenderer();
+        zoomin=8;
+  var mapOptions = {
+    zoom: zoomin,
+    center: new google.maps.LatLng(22,121.044922)
+  };
+   map = new google.maps.Map(document.getElementById('map-canvas'),
+      mapOptions);
+
+   directionsDisplay.setMap(map);
+  //directionsDisplay.setPanel(document.getElementById('directions-panel'));
+  google.maps.event.addListener(map, 'click', function(e) {
+     latlngclick = e.latLng;
+     var lng =latlngclick.A;
+     var lat =latlngclick.k;
+    placeMarker(lat,lng, map);
+    Chat.LatLngSend(lat,lng);
+        zoomLevel = map.getZoom();
+    Chat.ZoomAdd(zoomLevel);
+  });
+  google.maps.event.addListener(map, 'zoom_changed', function() {
+
+});
+}
+
+function placeMarker(lat,lng, map) {
+  var myLatlng = new google.maps.LatLng(lat,lng);
+  var marker = new google.maps.Marker({
+    position: myLatlng,
+    map: map
+  });
+  map.panTo(myLatlng);
+}
+function placeSceneMarkers(lat,lng, map) {
+  var myLatlng = new google.maps.LatLng(lat,lng);
+  new google.maps.Marker({
+    position: myLatlng,
+    map: map
+  });
+}
+function calcRoute(start,end,mode) {
+  //var start = document.getElementById('start').value;
+ // var end = document.getElementById('end').value;
+  var travelMode ;
+ if(mode=="drive")
+ {
+   travelMode  = google.maps.TravelMode.DRIVING;
+
+ }
+ if(mode=="bike")
+ {
+   travelMode  =  google.maps.TravelMode.BICYCLING;
+
+ }
+ if(mode=="transit")
+ {
+   travelMode  =  google.maps.TravelMode.TRANSIT;
+
+ }
+ if(mode=="walk")
+ {
+   travelMode  =  google.maps.TravelMode.WALKING;
+
+ }
+  var request = {
+      origin:start,
+      destination:end,
+      travelMode: travelMode
+  };
+
+  directionsService.route(request, function(response, status) {
+    if (status == google.maps.DirectionsStatus.OK) {
+      directionsDisplay.setDirections(response);
+    }
+    else
+    {
+      alert("no result");
+    }
+  });
+}
+
+function plan()
+{
+  var start = $("#start").val();
+  var end = $("#end").val()
+  var mode = $("#mode").val()
+  calcRoute(start,end,mode);
+  Chat.planroute(start,end,mode);
+}
+
+ function AddPlans(){  
+         /* Send the data using post */
+      var posting = $.post("/create?start="+$("#start").val()+"&end="+$("#end").val()+"&mode="+$("#mode").val());
+
+      /* Put the results in a div */
+      posting.done(function( data ) {
+         GetRoute();
+         Chat.updateRoute();
+      });
+    }
+  function GetRoute(){  
+        $.getJSON("/getALLRoute/",
+                function(data) {
+                   $("#lists").empty();
+
+                   // $('#rjson').val(data);  
+                    var content="";
+                    for(i=0;i<data.length;i++){
+                      var s=data[i]._id;
+                     content+=" <a class='routelink' id='"+data[i].Start+","+data[i].End+","+data[i].Mode+"' href='#' onclick='Cal(this); ''>"+data[i].Start+"-"+data[i].End+"</a> "
+
+                    +" <a id='"+s+"' href='#' onclick='del(this)'>刪除</a></br>"                       
+                       }
+                       $("#lists").html(content);
+                });
+    }
+    function TrackStart(){
+        //setInterval(function(){getRoutePoint()}, 3000);
+      getRoutePoint();
+    }
+    //即時軌跡
+    var s=0;
+    var myVar;
+    var L=0;
+    var marker;
+    var markersArray = [];
+    function placeRouteMarkers(lat,lng, map) {
+      var myLatlng = new google.maps.LatLng(lat,lng);
+      marker=new google.maps.Marker({
+        position: myLatlng,
+        map: map
+      });
+      markersArray.push(marker);
+
+    }
+     function getRoutePoint(){  
+        $.getJSON("/getRoutePoint/",
+                function(data) {
+                          var datas = data;                     
+                        myVar =   setInterval(function(){  
+                          TimePoint(datas);
+                        }, 500);
+                         
+                });
+    }
+    function TimePoint(datas){
+        L=datas[0].point.length;
+      var lat = datas[0].point[s].lat;
+       var lng =datas[0].point[s].lon;
+      placeRouteMarkers(lat,lng, map)
+      s=s+1;
+      if(s>=L){
+          ClearMark();
+        //clearInterval(myVar);
+        s=0;
+      }
+    }
+    function ClearMark(){
+      s=0;
+              for (var i = 0; i < markersArray.length; i++) {
+            markersArray[i].setMap(null);
+        }
+    }
+    //即時軌跡END
+function Cal(elem) {
+    var elemt = elem.id.split(',')
+    calcRoute(elemt[0],elemt[1],elemt[2]);
+    Chat.planroute(elemt[0],elemt[1],elemt[2]);
+    return false;
+}
+  function del(elem){  
+           // alert(id.value);
+            var ids=elem.id;
+        $.getJSON("/deleteRoute/"+ids,
+                function(data) {
+                  GetRoute();
+                   Chat.updateRoute();
+                });
+    }
+
+    function GetScene(){  
+        $.getJSON("/getScene/",
+                function(data) {
+                  var datas= data
+                  for(i=0;i<data.length;i++){
+                    var lat= data[i].Py;
+                    var lng= data[i].Px;
+                   placeSceneMarkers(lat,lng, map);
+                  }
+                });
+    }
+var  geo;
+    function getLocation()
+  {
+  if (navigator.geolocation)
+    {
+      geo =   setInterval(function(){  
+                           navigator.geolocation.getCurrentPosition(showPosition,showError);
+                        }, 5000);
+   
+    }
+  else{alert("Geolocation is not supported by this browser.");}
+  }
+
+function showPosition(position)
+  {
+    latown = position.coords.latitude;
+    lonown = position.coords.longitude;
+   unameown= usernameown;
+    selfPositionMark(latown,lonown,unameown);
+    Chat.selfPosition(latown,lonown,unameown);
+        $.getJSON("http://maps.googleapis.com/maps/api/geocode/json?latlng="+latown+","+lonown+"&sensor=true",
+  function(data){
+     var address =data.results[0].formatted_address;
+     $("#start").val(address);
+  });
+  
+  }
+function selfPositionMark(latown,lonown,unameown){
+
+    var infowindow = new google.maps.InfoWindow({
+        content: unameown
+    });
+ var myLatlng = new google.maps.LatLng(latown,lonown);
+  var marker = new google.maps.Marker({
+    position: myLatlng,
+    map: map
+  });
+  //map.panTo(myLatlng);
+  //map.setOptions({Zoom:16});
+  infowindow.open(map, marker);
+    google.maps.event.addListener(marker, 'click', function () {
+        infowindow.open(map, marker);
+    });
+
+
+}
+
+function showError(error)
+  {
+  switch(error.code) 
+    {
+    case error.PERMISSION_DENIED:
+      alert("User denied the request for Geolocation.");
+      break;
+    case error.POSITION_UNAVAILABLE:
+     alert("Location information is unavailable.");
+      break;
+    case error.TIMEOUT:
+      alert("The request to get user location timed out.")
+      break;
+    case error.UNKNOWN_ERROR:
+      alert("An unknown error occurred.");
+      break;
+    }
+  }
+google.maps.event.addDomListener(window, 'load', initialize);
+    </script>
+  </body>
+</html>
